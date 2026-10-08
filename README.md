@@ -17,7 +17,29 @@
 
 ## 开始使用
 
-在手机的 Termux 里：
+### 方式一：单文件（推荐）
+
+一条命令，不用 clone，不用复制目录：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/occcc-bot/gcli2api-termux-launcher/main/gcli2api.sh -o gcli2api.sh && bash gcli2api.sh
+```
+
+GitHub raw 访问不稳定时用镜像：
+
+```bash
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/occcc-bot/gcli2api-termux-launcher/main/gcli2api.sh -o gcli2api.sh && bash gcli2api.sh
+```
+
+以后每次使用只需：
+
+```bash
+bash gcli2api.sh
+```
+
+单文件内嵌了辅助模块，首次使用时展开到状态目录并校验 SHA-256，因此可以独立运行。它也能接管之前用仓库方式做的安装（两者共用同一状态目录）。
+
+### 方式二：克隆仓库
 
 ```bash
 pkg install -y git
@@ -25,11 +47,13 @@ git clone https://github.com/occcc-bot/gcli2api-termux-launcher.git
 bash gcli2api-termux-launcher/launcher.sh
 ```
 
-如果 GitHub 访问不稳定，可以用镜像克隆：
+镜像克隆：
 
 ```bash
 git clone https://ghfast.top/https://github.com/occcc-bot/gcli2api-termux-launcher.git
 ```
+
+### 安装与启动
 
 输入 `1` 首次安装，之后日常只输入 `2`。若没有 `curl`，先执行 `pkg install curl`。入口 `install.sh` 等同于菜单的首次安装选项：
 
@@ -40,6 +64,10 @@ bash gcli2api-termux-launcher/install.sh
 **首次安装耗时较长。** 上游要下载约 139 MB 的 Termux 基础工具，并且 `pydantic-core` 在 Android 上没有预编译包，需要在手机上用 Rust 现场编译，通常需要 15–30 分钟（取决于网络和机器性能）。请保持 Termux 在前台并保持网络连接。
 
 **开始之前请确认手机有浏览器**（Chrome / Chromium / Firefox 均可）。完成 Google OAuth 授权必须在浏览器里进行，没有浏览器就无法授权。部分精简系统只保留了系统 WebView 而没有可用的浏览器应用。
+
+### 为什么不做 APK
+
+APK 需要把 Termux 环境（Python 解释器加上百 MB 依赖）打包进去，还要处理 Android 后台限制、电池优化和各厂商保活策略，体积大、维护成本高，而实际跑的服务仍然是上游的 Python 程序。单文件脚本达到了同样的「一条命令就能用」，而且每一步在做什么都看得到。
 
 ## 菜单与 CLI
 
@@ -197,13 +225,25 @@ venv 不存在时才使用 `uv venv --python python .venv` 创建。已有损坏
 
 ```bash
 cd gcli2api-termux-launcher
-bash -n launcher.sh install.sh
+bash -n launcher.sh install.sh gcli2api.sh
 python -m unittest discover -s tests -v
 ```
+
+其中包含单文件构建的测试：重新构建 `gcli2api.sh`，在一个**没有 `check.py`** 的目录里运行它，确认内嵌模块能展开且哈希正确，并确认被篡改的本地副本会被拒绝。
 
 测试覆盖无下载启动、旧命名进程复用、项目路径隔离、重复进程/端口冲突、普通 HTTP 200 拒绝、健康/损坏/不确定依赖、ff-only 更新和保留修改、假成功安装拒绝、残留目录保护、无秘密指引及异常 PM2 状态。另覆盖只有 curl 的引导环境、下载超时参数及中文网络诊断、10 秒心跳/耗时结果且不泄漏原始日志、SIGINT/SIGTERM 清理子进程与锁、终端交互暂停拒绝假成功。另覆盖默认三项来源、raw 原文保存、完整镜像替换且不改其他仓库、上游语句变化拒绝执行、来源特殊字符校验及字面替换、命令级更新映射且无全局配置。下载失败由离线桩模拟，不声称验证了真实 DNS/TLS 或 Android 网络。
 
 真实 Android Termux 首次安装、上游实时依赖、实际 Google 授权和酒馆调用仍需手机实测；离线测试不是这些步骤成功的保证。
+
+## 构建单文件版本
+
+根目录的 `gcli2api.sh` 是构建产物，由 `build.sh` 把 `check.py` 内嵌进 `launcher.sh` 生成：
+
+```bash
+bash build.sh gcli2api.sh
+```
+
+修改 `launcher.sh` 或 `check.py` 后请重新构建，否则 `gcli2api.sh` 会与源码不一致。构建脚本会检查占位符替换是否完成，并验证生成文件的语法。
 
 ## 来源与致谢
 

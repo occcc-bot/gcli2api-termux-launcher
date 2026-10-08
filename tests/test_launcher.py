@@ -568,6 +568,62 @@ wait
     def test_help_and_unknown(self):
         self.run_cli('--help'); self.run_cli('invalid',False)
 
+    def test_single_file_build_matches_directory_mode(self):
+        # Build the single-file launcher, then run it from a directory that has
+        # no check.py next to it, and confirm the embedded helper is verified.
+        out = self.base / 'dist/gcli2api.sh'
+        build = subprocess.run(['bash', str(ROOT / 'build.sh'), str(out)],
+                               text=True, capture_output=True, timeout=120)
+        self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
+        self.assertTrue(out.exists())
+        # The embedded payload must not leave the placeholder behind, and the
+        # digest must be filled in (that is what enables embedded mode).
+        text = out.read_text()
+        self.assertNotIn('__GCLI_HELPER_PAYLOAD__', text)
+        self.assertNotIn("EMBEDDED_HELPER_SHA256=''", text)
+
+        lone = self.base / 'lone'
+        lone.mkdir()
+        shutil.copy(out, lone / 'gcli2api.sh')
+        env = dict(self.env)
+        env['GCLI_STATE_DIR'] = str(lone / 'state')
+        env['GCLI_APP_DIR'] = str(lone / 'state/install/gcli2api')
+
+        # guide needs no helper; it must work with no check.py present.
+        p = subprocess.run(['bash', str(lone / 'gcli2api.sh'), 'guide'],
+                           env=env, text=True, capture_output=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('酒馆', p.stdout)
+        self.assertFalse((lone / 'check.py').exists(), 'guide must not need the helper')
+
+        # A helper-backed action materializes and hash-checks the embedded copy.
+        subprocess.run(['bash', str(lone / 'gcli2api.sh'), 'status'],
+                       env=env, text=True, capture_output=True, timeout=60)
+        materialized = lone / 'state/check.py'
+        if materialized.exists():
+            import hashlib
+            expected = hashlib.sha256((ROOT / 'check.py').read_bytes()).hexdigest()
+            self.assertEqual(hashlib.sha256(materialized.read_bytes()).hexdigest(), expected)
+
+    def test_single_file_rejects_tampered_helper(self):
+        out = self.base / 'dist/gcli2api.sh'
+        subprocess.run(['bash', str(ROOT / 'build.sh'), str(out)],
+                       text=True, capture_output=True, timeout=120, check=True)
+        lone = self.base / 'lone2'
+        lone.mkdir()
+        shutil.copy(out, lone / 'gcli2api.sh')
+        state = lone / 'state'
+        state.mkdir()
+        (state / 'check.py').write_text('print("TAMPERED")\n')
+        env = dict(self.env, GCLI_STATE_DIR=str(state),
+                   GCLI_APP_DIR=str(state / 'install/gcli2api'))
+        p = subprocess.run(['bash', str(lone / 'gcli2api.sh'), 'status'],
+                           env=env, text=True, capture_output=True, timeout=60)
+        self.assertNotIn('TAMPERED', p.stdout + p.stderr)
+        import hashlib
+        expected = hashlib.sha256((ROOT / 'check.py').read_bytes()).hexdigest()
+        self.assertEqual(hashlib.sha256((state / 'check.py').read_bytes()).hexdigest(), expected)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
